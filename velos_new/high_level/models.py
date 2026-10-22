@@ -20,6 +20,11 @@ class Ville(models.Model):
     def __str__(self):
         return self.nom
 
+
+    def costs(self):
+        return sum(lieu.costs() for lieu in self.lieu_set.all())
+
+
 class Machine(models.Model):
     nom = models.CharField(max_length=100)
     prix = models.FloatField()
@@ -55,6 +60,15 @@ class Lieu(models.Model):
     def __str__(self):
        return self.nom
 
+    def costs(self):
+        cout_immo = (self.superficie * self.ville.prix_m2) + self.ville.taxe_immobiliere
+        cout_elec = self.consommation_electrique * self.ville.pays.tarif_electrique
+        cout_machines = sum(qm.nombre * qm.machine.prix for qm in self.quantite_machines.all())
+        cout_stock = sum(
+            pdv.stock.costs() for pdv in self.pointdevente_set.all() if pdv.stock
+        )
+        return cout_immo + cout_elec + cout_machines + cout_stock
+
 class Transport(models.Model):
 
     nombre_palettes = models.IntegerField()
@@ -74,6 +88,9 @@ class Transport(models.Model):
 
     def __str__(self):
        return f"Transport {self.depart.nom} -> {self.arrivee.nom} "
+    def costs(self):
+        # Coût lié au trajet ou à la quantité transportée
+        return self.frais_fixe + (self.distance * self.tarif_km)
 
 class Operation(models.Model):
 
@@ -98,6 +115,11 @@ class Operation(models.Model):
 
     def __str__(self):
        return self.nom
+    def costs(self):
+
+        if hasattr(self, 'machine') and self.machine:
+            return self.duree * self.machine.cout_maintenance
+        return 0.0
 
 
 class Produit(models.Model):
@@ -112,6 +134,10 @@ class Produit(models.Model):
 
     def __str__(self):
        return self.nom
+    def costs(self):
+        cout_ops = sum(op.costs() for op in self.operation_set.all())
+        cout_composants = sum(qp.costs() for qp in self.quantiteproduit_set.all())
+        return cout_ops + cout_composants
 
 class PrixProduit(models.Model):
 
@@ -151,6 +177,8 @@ class QuantiteProduit(models.Model):
     def __str__(self):
        return f"{self.nombre} x {self.produit.nom}"
 
+    def costs(self):
+        return self.nombre * self.produit.prix_de_vente
 
 class Stock(models.Model):
 
@@ -159,6 +187,9 @@ class Stock(models.Model):
     palettes_max = models.IntegerField()
     def __str__(self):
        return f"Stock (max : {self.palettes_max} palettes)"
+
+    def costs(self):
+        return sum(qp.costs() for qp in self.quantite_produits.all())
 
 class PointDeVente(models.Model):
 
@@ -174,6 +205,15 @@ class PointDeVente(models.Model):
         )
     def __str__(self):
        return self.nom
+    def costs(self):
+        # Somme des coûts des produits stockés
+        return sum(qp.costs() for qp in self.quantiteproduit_set.all())
+
+    def costs(self):
+        # Coût lié au lieu du point de vente + stock
+        cout_lieu = self.lieu.costs() if self.lieu else 0.0
+        cout_stock = self.stock.costs() if hasattr(self, 'stock') and self.stock else 0.0
+        return cout_lieu + cout_stock
 
 
 class Facture(models.Model):
